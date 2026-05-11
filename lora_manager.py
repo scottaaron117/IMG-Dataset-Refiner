@@ -83,9 +83,10 @@ footer { display: none !important; }
 #hidden_sync_input, #hidden_sync_btn, #hidden_calc_btn, #hidden_dnd_input, #hidden_dnd_btn, #hidden_tags_input { display: none !important; }
 #hidden_lib_toggle_input, #hidden_lib_toggle_btn, #hidden_lib_delete_input, #hidden_lib_delete_btn { display: none !important; }
 
-.gradio-dataframe tbody tr { transition: background-color 0.2s, opacity 0.2s; }
-.gradio-dataframe tbody tr[draggable="true"] { cursor: grab !important; }
-.gradio-dataframe tbody tr.dragging { opacity: 0.4; background-color: rgba(255, 136, 0, 0.3) !important; outline: 2px dashed #ff8800; outline-offset: -2px;}
+/* Was `.gradio-dataframe` — that class no longer exists in Gradio 5. Use elem_id roots. */
+#export_config_df tbody tr, #stats_table tbody tr, #preview_table tbody tr { transition: background-color 0.2s, opacity 0.2s; }
+#export_config_df tbody tr[draggable="true"], #stats_table tbody tr[draggable="true"] { cursor: grab !important; }
+#export_config_df tbody tr.dragging, #stats_table tbody tr.dragging { opacity: 0.4; background-color: rgba(255, 136, 0, 0.3) !important; outline: 2px dashed #ff8800; outline-offset: -2px;}
 #autocomplete-list { position: absolute; border: 1px solid #555; background-color: #1f2937; z-index: 9999; max-height: 150px; overflow-y: auto; border-radius: 4px; box-shadow: 0px 4px 6px rgba(0,0,0,0.5); }
 #autocomplete-list div { padding: 8px; cursor: pointer; color: #fff; font-size: 14px; }
 #autocomplete-list div:hover, #autocomplete-list div.autocomplete-active { background-color: #4ade80; color: #000; }
@@ -140,7 +141,11 @@ function() {
         setTimeout(() => document.getElementById('hidden_lib_delete_btn')?.click(), 50);
     };
 
-    function updateGalleryVisuals() { document.querySelectorAll('#main_gallery button').forEach((btn, idx) => { btn.classList.toggle('custom-selected', window.gallerySelectedIndices.has(idx)); }); }
+    // Gradio 5+ renders gallery thumbnails as <a class="thumbnail-item">, not <button>.
+    // Keeping `button` as a fallback for older versions.
+    var GALLERY_THUMB_SEL = '#main_gallery .thumbnail-item, #main_gallery button';
+    function getGalleryThumbs() { return document.querySelectorAll(GALLERY_THUMB_SEL); }
+    function updateGalleryVisuals() { getGalleryThumbs().forEach((el, idx) => { el.classList.toggle('custom-selected', window.gallerySelectedIndices.has(idx)); }); }
     function syncWithPython(viewIndex) {
         const payload = { selected: Array.from(window.gallerySelectedIndices), viewIndex: viewIndex };
         const wrapper = document.getElementById('hidden_sync_input');
@@ -190,37 +195,68 @@ function() {
         document.addEventListener("click", function (e) { closeAllLists(e.target); });
     }
 
-    const observer = new MutationObserver(() => { 
-        updateGalleryVisuals(); setupAutocomplete(); 
-        const trackedWrapper = document.getElementById('tracked_words_input'); const trackedInput = trackedWrapper ? trackedWrapper.querySelector('textarea') : null;
-        if (trackedInput && !trackedInput.dataset.commaListener) {
-            trackedInput.dataset.commaListener = "true";
-            trackedInput.addEventListener('keyup', function(e) { if (e.key === ',' || e.key === 'Enter') { setTimeout(() => document.getElementById('hidden_calc_btn')?.click(), 50); } });
-            trackedInput.addEventListener('blur', function(e) { setTimeout(() => document.getElementById('hidden_calc_btn')?.click(), 50); });
-        }
-    });
-    observer.observe(document.body, { childList: true, subtree: true });
+    // Scoped observers — document.body subtree:true was firing on every keystroke.
+    // Watch only the regions that actually need re-binding.
+    function attachObservers() {
+        const gallery = document.getElementById('main_gallery');
+        const captionWrap = document.getElementById('viewer_caption_area');
+        const tracked = document.getElementById('tracked_words_input');
+        const exportDf = document.getElementById('export_config_df');
+        const statsDf = document.getElementById('stats_table');
 
-    const svelteInputObserver = new MutationObserver((mutations) => {
-        mutations.forEach(m => {
-            m.addedNodes.forEach(node => {
-                if (node.nodeType === 1) {
+        if (gallery && !gallery.dataset.obsAttached) {
+            gallery.dataset.obsAttached = 'true';
+            new MutationObserver(updateGalleryVisuals).observe(gallery, { childList: true, subtree: true });
+        }
+        if (captionWrap && !captionWrap.dataset.obsAttached) {
+            captionWrap.dataset.obsAttached = 'true';
+            new MutationObserver(setupAutocomplete).observe(captionWrap, { childList: true, subtree: true });
+            setupAutocomplete();
+        }
+        if (tracked) {
+            const trackedInput = tracked.querySelector('textarea');
+            if (trackedInput && !trackedInput.dataset.commaListener) {
+                trackedInput.dataset.commaListener = "true";
+                trackedInput.addEventListener('keyup', function(e) { if (e.key === ',' || e.key === 'Enter') { setTimeout(() => document.getElementById('hidden_calc_btn')?.click(), 50); } });
+                trackedInput.addEventListener('blur', function(e) { setTimeout(() => document.getElementById('hidden_calc_btn')?.click(), 50); });
+            }
+        }
+        // Auto-select dataframe input on edit, for both export and stats tables.
+        [exportDf, statsDf].forEach(root => {
+            if (!root || root.dataset.dfInputObsAttached) return;
+            root.dataset.dfInputObsAttached = 'true';
+            new MutationObserver((mutations) => {
+                mutations.forEach(m => m.addedNodes.forEach(node => {
+                    if (node.nodeType !== 1) return;
                     const input = node.tagName === 'INPUT' ? node : node.querySelector('input');
-                    if (input && input.closest('.gradio-dataframe')) {
+                    if (input) {
                         let tries = 0;
                         const selectInterval = setInterval(() => { input.select(); if (tries++ > 15) clearInterval(selectInterval); }, 20);
                     }
-                }
-            });
+                }));
+            }).observe(root, { childList: true, subtree: true });
         });
-    });
-    svelteInputObserver.observe(document.body, { childList: true, subtree: true });
 
+        // Initial visual sync in case the gallery is already populated.
+        updateGalleryVisuals();
+    }
+
+    // Wait briefly for Gradio to mount, then attach. Retry a few times in case
+    // sub-trees load lazily (tabs are mounted on first activation).
+    let attachTries = 0;
+    const attachInterval = setInterval(() => {
+        attachObservers();
+        attachTries++;
+        if (attachTries > 30) clearInterval(attachInterval); // ~6s of retries
+    }, 200);
+
+    // Was `.gradio-dataframe tbody tr` — Gradio 5 dropped that class.
+    var DF_ROW_SEL = '#export_config_df tbody tr, #stats_table tbody tr';
     let dragStartIndex = -1;
     document.addEventListener('mousedown', function(e) {
-        const tr = e.target.closest('.gradio-dataframe tbody tr');
+        const tr = e.target.closest(DF_ROW_SEL);
         if (!tr) return;
-        if (e.target.closest('input') || e.target.closest('textarea')) { tr.removeAttribute('draggable'); } 
+        if (e.target.closest('input') || e.target.closest('textarea')) { tr.removeAttribute('draggable'); }
         else { tr.setAttribute('draggable', 'true'); }
     });
 
@@ -282,7 +318,7 @@ function() {
         if ((e.ctrlKey || e.metaKey) && (e.code === 'KeyA' || e.key.toLowerCase() === 'a')) {
             if (isInput) return;
             e.preventDefault(); e.stopPropagation();
-            const btns = document.querySelectorAll('#main_gallery button');
+            const btns = getGalleryThumbs();
             window.gallerySelectedIndices.clear();
             btns.forEach((b, i) => window.gallerySelectedIndices.add(i));
             updateGalleryVisuals();
@@ -320,13 +356,13 @@ function() {
             return;
         }
 
-        // --- 2. ÉCOUTE DES CLICS DE LA GALERIE ---
+        // --- 2. Gallery click handling ---
         if (e.target.closest('label') || e.target.tagName === 'INPUT') return;
-        const btn = e.target.closest('#main_gallery button');
+        const btn = e.target.closest(GALLERY_THUMB_SEL);
         if (!btn) return;
-        
+
         e.preventDefault(); e.stopPropagation();
-        const btns = Array.from(document.querySelectorAll('#main_gallery button'));
+        const btns = Array.from(getGalleryThumbs());
         const index = btns.indexOf(btn);
         if (index === -1) return;
 
@@ -353,14 +389,29 @@ function() {
         syncWithPython(index);
     }, true);
 
-    setInterval(() => {
+    // Listen for Python-side clears: clear_selection() writes "{}" into
+    // hidden_sync_input. Watch the textarea's 'input' event instead of polling.
+    function bindClearListener() {
         const wrapper = document.getElementById('hidden_sync_input');
         const selInput = wrapper ? wrapper.querySelector('textarea, input') : null;
-        if (selInput && selInput.value === '{}' && window.gallerySelectedIndices.size > 0) {
-            window.gallerySelectedIndices.clear();
-            updateGalleryVisuals();
+        if (!selInput || selInput.dataset.clearListener) return;
+        selInput.dataset.clearListener = 'true';
+        selInput.addEventListener('input', function() {
+            if (selInput.value === '{}' && window.gallerySelectedIndices.size > 0) {
+                window.gallerySelectedIndices.clear();
+                updateGalleryVisuals();
+            }
+        });
+    }
+    // Initial attempt + retry (hidden_sync_input is mounted with the rest of
+    // the Blocks; attach as soon as it appears).
+    let clearTries = 0;
+    const clearBindHandle = setInterval(() => {
+        bindClearListener();
+        if (++clearTries > 30 || document.getElementById('hidden_sync_input')?.querySelector('textarea, input')?.dataset.clearListener) {
+            clearInterval(clearBindHandle);
         }
-    }, 150);
+    }, 200);
 }
 """
 
@@ -1803,7 +1854,7 @@ with gr.Blocks(title="IMG Dataset Refiner v4.0 Pro", css=css_code) as app:
                         with gr.Group():
                             ui_btn_clean_com = gr.Button(t_init.get("btn_clean_com", ""))
                             ui_btn_clean_dup = gr.Button(t_init.get("btn_clean_dup", ""))
-                    ui_preview_table = gr.Dataframe(label=t_init.get("df_preview", ""), interactive=False)
+                    ui_preview_table = gr.Dataframe(label=t_init.get("df_preview", ""), interactive=False, elem_id="preview_table")
 
                 ui_tab_prep = gr.Tab(t_init.get("tab_prep", ""))
                 with ui_tab_prep:
@@ -1890,7 +1941,7 @@ with gr.Blocks(title="IMG Dataset Refiner v4.0 Pro", css=css_code) as app:
                                 ui_quick_prio = gr.Dropdown(label=t_init.get("quick_prio", ""), choices=[str(i) for i in range(1, 101)], allow_custom_value=True, scale=1)
                                 ui_quick_target = gr.Number(label=t_init.get("quick_tgt", ""), scale=1)
                                 
-                            ui_export_config_df = gr.Dataframe(headers=t_init.get("exp_df_headers", []), interactive=True, type="pandas", row_count=(1, "dynamic"), col_count=(3, "fixed"))
+                            ui_export_config_df = gr.Dataframe(headers=t_init.get("exp_df_headers", []), interactive=True, type="pandas", row_count=(1, "dynamic"), col_count=(3, "fixed"), elem_id="export_config_df")
                             ui_strategy_radio = gr.Radio(t_init.get("strat_choices", []), value=t_init.get("strat_choices", [""])[0] if t_init.get("strat_choices") else "", label=t_init.get("strat", ""))
                             ui_max_img_input = gr.Number(label=t_init.get("max_img", ""), value=0, precision=0)
                             ui_export_dir = gr.Textbox(label=t_init.get("dest_folder", ""), placeholder=t_init.get("dest_ph", ""))
@@ -1908,7 +1959,7 @@ with gr.Blocks(title="IMG Dataset Refiner v4.0 Pro", css=css_code) as app:
                     ui_stats_status = gr.Markdown()
                     with gr.Row():
                         with gr.Column(scale=1):
-                            ui_stats_table = gr.Dataframe(headers=t_init.get("stat_df_headers", []), interactive=True, type="pandas", row_count=(1, "dynamic"))
+                            ui_stats_table = gr.Dataframe(headers=t_init.get("stat_df_headers", []), interactive=True, type="pandas", row_count=(1, "dynamic"), elem_id="stats_table")
                             ui_btn_civitai = gr.Button(t_init.get("btn_civitai", ""), variant="secondary")
                             ui_civitai_output = gr.Textbox(label="Format", interactive=False, lines=5)
                             with gr.Row():
