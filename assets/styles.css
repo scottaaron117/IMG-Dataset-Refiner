@@ -1,0 +1,37 @@
+/* Suppression totale des en-têtes Gradio */
+.gradio-container header, .gradio-container-4-26-0 header, header { display: none !important; }
+footer { display: none !important; }
+
+#left_panel { resize: horizontal; overflow-x: hidden; overflow-y: auto; width: 380px; min-width: 250px; max-width: 70vw; flex: none !important; border-right: 2px solid #374151; padding-right: 15px; transition: min-width 0.3s ease, width 0.3s ease, padding 0.3s ease, opacity 0.3s ease; }
+#left_panel.collapsed { width: 0px !important; min-width: 0px !important; padding: 0px !important; margin: 0px !important; border: none !important; opacity: 0; pointer-events: none; }
+#right_panel { width: 380px; min-width: 250px; max-width: 50vw; flex: none !important; border-left: 2px solid #374151; padding-left: 15px; overflow-y: auto; max-height: 95vh; }
+.caption-label { font-size: 14px !important; font-weight: bold !important; color: #4ade80 !important; display: none !important; }
+.custom-selected { outline: 4px solid #ff8800 !important; outline-offset: -4px !important; box-shadow: inset 0 0 20px rgba(255, 136, 0, 0.9) !important; border-radius: 8px !important; }
+.custom-selected img { filter: sepia(0.8) hue-rotate(330deg) saturate(3) !important; opacity: 0.8 !important; }
+
+#hidden_sync_input, #hidden_sync_btn, #hidden_calc_btn, #hidden_dnd_input, #hidden_dnd_btn, #hidden_tags_input { display: none !important; }
+#hidden_lib_toggle_input, #hidden_lib_toggle_btn, #hidden_lib_delete_input, #hidden_lib_delete_btn { display: none !important; }
+
+/* Was `.gradio-dataframe` — that class no longer exists in Gradio 5. Use elem_id roots. */
+#export_config_df tbody tr, #stats_table tbody tr, #preview_table tbody tr { transition: background-color 0.2s, opacity 0.2s; }
+#export_config_df tbody tr[draggable="true"], #stats_table tbody tr[draggable="true"] { cursor: grab !important; }
+#export_config_df tbody tr.dragging, #stats_table tbody tr.dragging { opacity: 0.4; background-color: rgba(255, 136, 0, 0.3) !important; outline: 2px dashed #ff8800; outline-offset: -2px;}
+#autocomplete-list { position: absolute; border: 1px solid #555; background-color: #1f2937; z-index: 9999; max-height: 150px; overflow-y: auto; border-radius: 4px; box-shadow: 0px 4px 6px rgba(0,0,0,0.5); }
+#autocomplete-list div { padding: 8px; cursor: pointer; color: #fff; font-size: 14px; }
+#autocomplete-list div:hover, #autocomplete-list div.autocomplete-active { background-color: #4ade80; color: #000; }
+.info-box { background-color: rgba(74, 222, 128, 0.1); border-left: 4px solid #4ade80; padding: 10px; margin-bottom: 15px; border-radius: 4px; }
+
+#btn_translate_entire { background: #4ade80 !important; color: #052e16 !important; font-weight: bold !important; border: none !important; transition: all 0.2s; }
+#btn_translate_entire:hover { background: #22c55e !important; transform: scale(1.01); }
+
+/* Rendu 100% Natif Gradio (Fond Vert par CSS) pour Traduction Live */
+#live_translation_preview textarea { 
+    background-color: rgba(34, 197, 94, 0.08) !important; 
+    color: #4ade80 !important; 
+    border: 1px dashed #4ade80 !important; 
+    font-style: italic !important;
+    opacity: 1 !important; 
+    -webkit-text-fill-color: #4ade80 !important;
+}
+
+.lib-item-custom { transition: border-color 0.2s ease, background-color 0.2s ease; }
