@@ -1,5 +1,33 @@
 # **📝 Changelog \- IMG Dataset Refiner**
 
+## **v4.0.2 — scottaaron117 fork (Gradio 5 modernization)**
+
+A maintenance fork of [NyxAwroo/IMG-Dataset-Refiner](https://github.com/NyxAwroo/IMG-Dataset-Refiner) v4.0 Pro. All original features and the UI design are upstream's — this entry only covers fork-specific changes. See `readme.md` "What's changed in the fork" for the rationale.
+
+### Phase 1 — make it installable
+- New `pyproject.toml` and refreshed `requirements.txt` pinning `gradio>=5.15,<6`, `huggingface_hub<1.0`, `numpy`, and the other deps that were unpinned (or, in numpy's case, undeclared).
+- Renamed the upstream `gr.Dataframe(column_count=...)` calls back to Gradio 5's `col_count=`. Fixed `row_count=("dynamic")` (a bare string, not a tuple) to `(1, "dynamic")`.
+- Removed `app.launch(css=...)` — `css` was always rejected by Gradio 5's `launch()` and the upstream `try/except TypeError` workaround was load-bearing on a fallback that should never have existed.
+- Replaced the tkinter `browse_folder` server-side dialog with an in-page hint; the path textbox already accepts paths directly.
+- Hid the language radio and defaulted runtime UI strings to English. `fr.json` still loads but the dynamic-translation callback was deleted in Phase 3.
+
+### Phase 2 — repair the JS bridge for Gradio 5 DOM
+- Gradio 5 renders Gallery thumbnails as `<a class="thumbnail-item">`, not `<button>`. The 4 selectors that depended on `#main_gallery button` were silently no-ops — this is why gallery click/multi-select didn't work. Switched to `#main_gallery .thumbnail-item` (with the old selector kept as a fallback).
+- `.gradio-dataframe` is no longer a class in Gradio 5. Added `elem_id`s to all three Dataframes; rewrote CSS rules and the drag-row JS to use the IDs.
+- Scoped both `MutationObserver`s away from `document.body` + `subtree:true` (firing on every keystroke) to the specific containers they actually care about. Late-mounted tabs are handled by a bounded retry loop.
+- Replaced a 150 ms `setInterval` polling loop with a proper `input` event listener on the textarea it was polling.
+- Added `elem_id`s to the path input, browse button, and load button so they're addressable from tests/CSS without depending on label text.
+
+### Phase 3 — code-hygiene cleanup
+- **CSS / JS out of Python strings.** The 38-line CSS string and 305-line JS string moved from inline `"""..."""` blobs to `assets/styles.css` and `assets/scripts.js`, with a 2-line loader at import time. Editors now syntax-highlight them and diffs are readable.
+- **Enum-key control flow.** The three handlers that branched on the dropdown's user-visible label (`"Ajouter" in mode or "Add" in mode`, `strategy in ["Filtre Classique", "Classic Filter", "Filtre Classique (Contient au moins un tag)", "Classic Filter (Contains at least one tag)"]`, etc.) now branch on internal constants (`LIB_MODE_ADD`, `STRAT_CLASSIC`, …). The dropdowns use `gr.Radio(choices=[(label, key)])` so the handler always receives the key. Same pattern applied to the `api_backend` radio.
+- **Dead code deleted.** `change_language()` (155 lines of `gr.update()` calls rebuilding every label) and its `lang_radio.change(outputs=[...100+ components])` wiring (~22 lines). Both unreachable since Phase 1 hid the radio. Also: the function would have corrupted the new tuple-form radios if it ever fired (it tried to overwrite `strat_choices` with plain strings).
+- **Browser smoke test.** `tests/test_smoke.py` drives the app under headless Chromium via Playwright — loads the bundled example dataset, exercises gallery click/shift-range/ctrl-toggle, autocomplete, and asserts that the three radios expose enum-key values. 24/24 passing on Gradio 5.50.
+
+`lora_manager.py` went from 2,082 lines to 1,631. No upstream features were removed.
+
+---
+
 ## **v4.0 Pro (Mise à jour d'Ergonomie et de Productivité)**
 
 Cette mise à jour se concentre sur l'accélération radicale du flux de travail manuel et la fiabilisation de l'interface face aux limitations strictes de Gradio 4\.

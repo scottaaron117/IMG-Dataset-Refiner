@@ -89,26 +89,49 @@ python lora_manager.py
 
 ## **🔧 What's changed in the fork**
 
-- **Installable.** Real `pyproject.toml` with pinned deps; `pip install -e .` works end-to-end on Python 3.10–3.12.
-- **Gradio 5.x compatible.** Fixed `Dataframe(column_count=...)` → `col_count`, fixed malformed `row_count=("dynamic")` tuple, removed the redundant `app.launch(css=...)` that always crashed on Gradio 5.
-- **No more tkinter.** Web-first folder input.
-- **English-only at runtime** (French dictionary still loads but the language radio is hidden). Full French removal + internal-enum-key refactor coming in a follow-up.
-- **Planned (in progress):** Replace the hidden-input JS bridge with `gr.JSON` state + native `js=` event hooks. Split the 2,082-line monolith into modules.
+**Phase 1 — Installable on Gradio 5.x**
+- Real `pyproject.toml` with all deps pinned. `pip install -e .` works on Python 3.10/3.11/3.12.
+- Fixed two startup-crash bugs: `huggingface_hub` 1.x removed `HfFolder` (pinned `<1.0`); Gradio 6 renamed `col_count` to `column_count` but upstream wrote `column_count` against an installed Gradio 5 — pinned `gradio>=5.15,<6` and renamed back to `col_count`.
+- Fixed malformed `row_count=("dynamic")` (was the string `"dynamic"`, not a tuple).
+- Removed the redundant `app.launch(css=...)` that raised `TypeError` on every Gradio 5 launch.
+- Removed the server-side tkinter "Browse" dialog (focus-stealing in a web app, `ImportError` on bare Linux). Path textbox accepts Windows paths directly.
 
-See `Changelog.md` for the upstream version history.
+**Phase 2 — JS bridge repaired for Gradio 5 DOM**
+- Gradio 5 renders gallery thumbnails as `<a class="thumbnail-item">`, not `<button>`. Every `#main_gallery button` selector was silently matching nothing — that's why selection didn't work. Replaced with `#main_gallery .thumbnail-item` (with the old selector kept as fallback for older Gradio).
+- `.gradio-dataframe` class no longer exists in Gradio 5. Added stable `elem_id`s to the three Dataframes and rewrote the CSS and drag-row selectors against them.
+- Scoped the two `MutationObserver`s from `document.body, subtree:true` (firing on every keystroke) down to the specific containers they actually care about.
+- Replaced a 150ms `setInterval` polling hack with a proper `input` event listener.
+
+**Phase 3 — Cleanup**
+- CSS (38 lines) and JavaScript (305 lines) moved out of inline Python strings into `assets/styles.css` and `assets/scripts.js`. Editors get syntax highlighting, diffs are sane.
+- **Enum-key control flow.** Three branch sites (`batch_library_cb`, `update_lib_ui`, `simulate_and_export`) compared against the user-visible dropdown label (`"Ajouter" in mode or "Add" in mode`, `strategy in ["Filtre Classique", "Classic Filter", ...]`). Renaming a string in `en.json` would silently change behaviour. Now the dropdowns use Gradio's `choices=[(label, key)]` form, the handlers branch on internal constants (`LIB_MODE_ADD`, `STRAT_CLASSIC`, etc.), and labels are display-only. Same fix applied to `api_backend`.
+- Deleted 187 lines of dead code: `change_language()` and its giant `lang_radio.change()` wiring registration. Unreachable since the language radio became invisible; the function also assumed the old plain-string dropdown choices and would have corrupted the new tuple-form radios if it ever fired.
+- Headless-Chromium browser smoke test added at `tests/test_smoke.py` — drives the bundled example dataset end-to-end (gallery click / shift-range / ctrl-toggle, autocomplete, enum-key wiring). 24/24 passing.
+
+**File count**: `lora_manager.py` 2,082 → 1,631 lines. CSS+JS extracted to `assets/`. Total app size unchanged; the layout is just no longer a single-file monolith.
+
+See `Changelog.md` for the full per-commit history and the upstream version history.
 
 ## **📦 Project Structure**
 
-IMG-Dataset-Refiner/      
-├── lora\_manager.py          \# Main entry point (Business logic and UI)      
-├── Changelog.md             \# Update history (v4.0 Pro)      
-├── en.json                  \# English language dictionary      
-├── fr.json                  \# French language dictionary      
-├── lora\_recipes.json        \# Saves of your export configurations    
-├── ai\_recipes.json          \# Saves of your Custom AI prompts    
-├── README.md                \# This documentation (English)      
-├── README\_fr.md             \# French documentation      
-└── requirements.txt         \# Python dependencies
+```
+IMG-Dataset-Refiner/
+├── lora_manager.py          # Main entry point (UI assembly + business logic)
+├── assets/
+│   ├── styles.css           # Extracted from inline Python string
+│   └── scripts.js           # Extracted from inline Python string
+├── tests/
+│   └── test_smoke.py        # Playwright headless-Chromium regression test
+├── pyproject.toml           # Pinned dependencies (preferred over requirements.txt)
+├── requirements.txt         # Mirror of pyproject.toml for pip install -r
+├── en.json                  # English UI strings (control-flow uses enum keys, not these)
+├── fr.json                  # Upstream French strings (still on disk, unused at runtime)
+├── lora_recipes.json        # User export-config saves (auto-created)
+├── ai_recipes.json          # User custom AI prompts (auto-created)
+├── Changelog.md             # Upstream version history + this fork's commits
+├── readme.md                # This file
+└── README_fr.md             # Upstream French README (kept for attribution)
+```
 
 ## **🎓 Use Cases**
 
