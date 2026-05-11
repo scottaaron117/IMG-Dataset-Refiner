@@ -1774,9 +1774,9 @@ with gr.Blocks(title="IMG Dataset Refiner v4.0 Pro", css=css_code) as app:
                 ui_guide_text = gr.Markdown(t_init.get("guide_text", ""))
             
             with gr.Row():
-                dir_input = gr.Textbox(placeholder="C:\\mon\\dataset", show_label=False, scale=4)
-                ui_browse_btn = gr.Button(t_init.get("browse", ""), scale=1)
-            ui_load_btn = gr.Button(t_init.get("load", ""), variant="primary")
+                dir_input = gr.Textbox(placeholder="C:\\mon\\dataset", show_label=False, scale=4, elem_id="dataset_dir_input")
+                ui_browse_btn = gr.Button(t_init.get("browse", ""), scale=1, elem_id="browse_btn")
+            ui_load_btn = gr.Button(t_init.get("load", ""), variant="primary", elem_id="load_btn")
             ui_status_text = gr.Markdown(t_init.get("status_wait", ""))
             
         with gr.Column(scale=3):
