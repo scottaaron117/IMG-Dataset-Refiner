@@ -54,6 +54,9 @@ STRAT_CLASSIC = "strat_classic"
 STRAT_BALANCING = "strat_balancing"
 STRAT_PRIORITY = "strat_priority"
 
+BACKEND_OLLAMA = "backend_ollama"
+BACKEND_OPENAI = "backend_openai"
+
 MSG = {"FR": {}, "EN": {}}
 UI_T = {"FR": {}, "EN": {}}
 
@@ -1171,7 +1174,7 @@ def call_ai_api(prompt, model, image_path, api_backend, api_url, temp, ctx, sys_
     b64 = None
     if image_path:
         with open(image_path, "rb") as f: b64 = base64.b64encode(f.read()).decode("utf-8")
-    if api_backend == "Ollama":
+    if api_backend == BACKEND_OLLAMA:
         if not api_url.endswith("/api/generate") and not api_url.endswith("/api/chat"): api_url = api_url.rstrip("/") + "/api/generate"
         payload = {"model": model, "prompt": prompt, "stream": False, "options": {"temperature": float(temp), "num_ctx": int(ctx)}}
         if sys_prompt: payload["system"] = str(sys_prompt).strip()
@@ -1402,7 +1405,10 @@ with gr.Blocks(title="IMG Dataset Refiner v4.0 Pro", css=css_code) as app:
                     with gr.Row():
                         with gr.Column(scale=1):
                             ui_ai_conf_title = gr.Markdown(t_init.get("ai_conf_title", ""))
-                            api_backend = gr.Radio(["Ollama", "API OpenAI / LM Studio (GGUF locaux)"], label=t_init.get("api_backend", ""), value="Ollama")
+                            api_backend = gr.Radio(
+                                choices=[("Ollama", BACKEND_OLLAMA), ("OpenAI-compatible (LM Studio / GGUF)", BACKEND_OPENAI)],
+                                label=t_init.get("api_backend", ""), value=BACKEND_OLLAMA,
+                            )
                             vlm_model = gr.Textbox(value="llava", label=t_init.get("vlm_model", ""))
                             llm_model = gr.Textbox(value="llama3.1", label=t_init.get("llm_model", ""))
                             with gr.Accordion(t_init.get("ai_adv_acc", ""), open=False) as ui_ai_adv_acc:
@@ -1612,7 +1618,10 @@ with gr.Blocks(title="IMG Dataset Refiner v4.0 Pro", css=css_code) as app:
     btn_prep.click(fn=batch_process_images, inputs=[dataset_state, prep_dest, prep_size, prep_format, prep_crop, prep_alpha], outputs=[prep_status])
 
     ai_action_dropdown.change(fn=update_ai_action_desc, inputs=[ai_action_dropdown], outputs=[ai_action_desc, custom_prompt_group, injection_group])
-    api_backend.change(fn=lambda x: "http://127.0.0.1:11434" if x == "Ollama" else "http://127.0.0.1:1234", inputs=[api_backend], outputs=[api_url_input])
+    api_backend.change(
+        fn=lambda x: "http://127.0.0.1:11434" if x == BACKEND_OLLAMA else "http://127.0.0.1:1234",
+        inputs=[api_backend], outputs=[api_url_input],
+    )
     ai_template_dd.change(fn=apply_ai_recipe, inputs=[ai_template_dd], outputs=[custom_prompt_input])
     btn_save_template.click(fn=save_ai_recipe, inputs=[ai_template_name, custom_prompt_input], outputs=[ai_template_dd])
     btn_run_ai.click(fn=process_ai_action, inputs=[dataset_state, selected_indices_state, ui_search_box, ai_action_dropdown, custom_prompt_input, injection_mode, use_vision_for_custom, vlm_model, llm_model, api_backend, api_url_input, ai_temp, ai_ctx, ai_sys, current_idx_state, ui_tracked_words, lang_radio], outputs=[dataset_state, filtered_state, history_state, ai_status, ui_hidden_tags_input, current_caption, highlight_preview, word_counter])

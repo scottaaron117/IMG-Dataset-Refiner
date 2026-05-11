@@ -164,6 +164,31 @@ def run_smoke():
         )
         step("tabs present", len(tabs) > 0, f"count={len(tabs)} labels={tabs[:8]}")
 
+        # ---- Phase 3c regression: control-flow radios use enum keys, not labels ----
+        # The library mode and export strategy radios must hold internal keys
+        # (LIB_MODE_*, STRAT_*) as their <input value=>, with the user-visible
+        # English strings as the rendered label text. This decoupling is what
+        # makes renaming a label in en.json safe; without it, the Python
+        # handlers branched on the visible string.
+        radio_vals = page.evaluate(
+            "() => Array.from(document.querySelectorAll('input[type=\"radio\"]')).map(r => r.value)"
+        )
+        step(
+            "lib_mode radio values are LIB_MODE_* keys",
+            all(v in radio_vals for v in ("lib_mode_add", "lib_mode_remove", "lib_mode_replace")),
+            f"vals={radio_vals}",
+        )
+        step(
+            "strategy radio values are STRAT_* keys",
+            all(v in radio_vals for v in ("strat_classic", "strat_balancing", "strat_priority")),
+            f"vals={radio_vals}",
+        )
+        step(
+            "api_backend radio values are BACKEND_* keys",
+            all(v in radio_vals for v in ("backend_ollama", "backend_openai")),
+            f"vals={radio_vals}",
+        )
+
         step(
             "no app-relevant console errors",
             len(app_console_errors) == 0,
