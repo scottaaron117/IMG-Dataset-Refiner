@@ -1,8 +1,13 @@
-gradio>=4.0.0
-pandas
-plotly
-Pillow
-requests
-imagehash
-opencv-python
-deep-translator
+# Mirror of pyproject.toml dependencies. Prefer `pip install -e .` if you can.
+# Pinned for Gradio 5.x. Do NOT upgrade gradio to 6.x without addressing
+# the Dataframe col_count rename and re-validating the hidden-input JS bridge.
+gradio>=5.15,<6.0
+huggingface_hub>=0.25,<1.0
+pandas>=2.0
+numpy>=1.24,<3.0
+plotly>=5.18
+Pillow>=10.0
+requests>=2.31
+imagehash>=4.3
+opencv-python>=4.8
+deep-translator>=1.11

@@ -1,0 +1,52 @@
+[build-system]
+requires = ["setuptools>=68", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "img-dataset-refiner"
+version = "4.0.1"
+description = "Gradio app for preparing LoRA training image datasets: caption editing, batch tagging, deduplication, smart crop, resize, VLM auto-captioning. Fork of NyxAwroo/IMG-Dataset-Refiner."
+requires-python = ">=3.10,<3.13"
+readme = "readme.md"
+license = { text = "See upstream repository" }
+authors = [
+    { name = "NyxAwroo (original author)" },
+    { name = "scottaaron117 (fork maintainer)" },
+]
+keywords = ["lora", "dataset", "captioning", "gradio", "stable-diffusion", "image-dataset"]
+classifiers = [
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Operating System :: OS Independent",
+    "Framework :: Gradio",
+]
+
+dependencies = [
+    # Gradio 5.x. column_count was renamed in Gradio 6, hidden-input JS bridge
+    # has not been validated against 6.x. Hard cap to <6.
+    "gradio>=5.15,<6.0",
+    # Gradio 5 requires HfFolder which was removed in huggingface_hub 1.0.
+    "huggingface_hub>=0.25,<1.0",
+    "pandas>=2.0",
+    "numpy>=1.24,<3.0",
+    "plotly>=5.18",
+    "Pillow>=10.0",
+    "requests>=2.31",
+    "imagehash>=4.3",
+    "opencv-python>=4.8",
+    "deep-translator>=1.11",
+]
+
+[project.optional-dependencies]
+# Folder-picker dialog is desktop-only. Web-first install can skip it.
+# On Linux, tkinter ships via the system package (e.g. apt install python3-tk),
+# not pip — there is no pip-installable tkinter.
+dev = []
+
+[project.scripts]
+img-dataset-refiner = "lora_manager:_cli_entry"
+
+[tool.setuptools]
+py-modules = ["lora_manager"]
