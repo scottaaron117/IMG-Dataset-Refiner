@@ -39,8 +39,20 @@ except ImportError:
 # ==========================================
 
 RECIPES_FILE = "lora_recipes.json"
-AI_RECIPES_FILE = "ai_recipes.json" 
+AI_RECIPES_FILE = "ai_recipes.json"
 DEFAULT_OLLAMA_URL = "http://127.0.0.1:11434"
+
+# Internal keys for control-flow dropdowns. Decoupled from user-visible labels
+# so renaming a label in en.json can't silently change branching behaviour.
+# Dropdowns use Gradio's `choices=[(label, key)]` tuple form — the handler
+# receives the key, never the label.
+LIB_MODE_ADD = "lib_mode_add"
+LIB_MODE_REMOVE = "lib_mode_remove"
+LIB_MODE_REPLACE = "lib_mode_replace"
+
+STRAT_CLASSIC = "strat_classic"
+STRAT_BALANCING = "strat_balancing"
+STRAT_PRIORITY = "strat_priority"
 
 MSG = {"FR": {}, "EN": {}}
 UI_T = {"FR": {}, "EN": {}}
@@ -323,24 +335,22 @@ def batch_library_cb(dataset, lib_state, mode, replace_target, selected_ids, sea
     selected_items = [x['text'] for x in lib_state if x.get('selected', False)]
     target = str(replace_target).strip() if replace_target else ""
 
-    if "Ajouter" in mode or "Add" in mode:
-        action_mode = "Add"
-    elif "Retirer" in mode or "Remove" in mode:
-        action_mode = "Remove"
-    else:
-        action_mode = "Replace"
+    # `mode` is the internal enum key (LIB_MODE_*) from the dropdown's tuple
+    # choices — not the displayed label. Renaming labels in en.json can no
+    # longer change behaviour here.
+    action_mode = mode if mode in (LIB_MODE_ADD, LIB_MODE_REMOVE, LIB_MODE_REPLACE) else LIB_MODE_ADD
 
-    if action_mode == "Add" and not selected_items:
+    if action_mode == LIB_MODE_ADD and not selected_items:
         gr.Warning(m.get("lib_warn_add", "⚠️ Veuillez cocher au moins un mot !"))
         cap, hl, wc = get_updated_viewer_data(new_dataset, current_idx, tracked_words, lang)
         return new_dataset, new_dataset, history, m.get("text_empty", ""), pd.DataFrame(), cap, hl, wc, gr.update()
-        
-    elif action_mode == "Remove" and not selected_items and not target:
+
+    elif action_mode == LIB_MODE_REMOVE and not selected_items and not target:
         gr.Warning(m.get("lib_warn_rem", "⚠️ Entrez une Cible OU cochez un mot !"))
         cap, hl, wc = get_updated_viewer_data(new_dataset, current_idx, tracked_words, lang)
         return new_dataset, new_dataset, history, m.get("text_empty", ""), pd.DataFrame(), cap, hl, wc, gr.update()
-        
-    elif action_mode == "Replace" and not target:
+
+    elif action_mode == LIB_MODE_REPLACE and not target:
         gr.Warning(m.get("lib_warn_rep", "⚠️ Spécifiez ce qu'il faut remplacer !"))
         cap, hl, wc = get_updated_viewer_data(new_dataset, current_idx, tracked_words, lang)
         return new_dataset, new_dataset, history, m.get("text_empty", ""), pd.DataFrame(), cap, hl, wc, gr.update()
@@ -349,22 +359,22 @@ def batch_library_cb(dataset, lib_state, mode, replace_target, selected_ids, sea
         if selected_ids and item['id'] not in selected_ids: continue
         cap = item['caption']; original_cap = cap
 
-        if action_mode == "Add":
+        if action_mode == LIB_MODE_ADD:
             existing_tags = [t.strip().lower() for t in cap.split(',')]
             for lib_item in selected_items:
                 if lib_item.lower() not in existing_tags:
                     sep = ", " if cap and not cap.endswith(", ") else ""
                     cap = cap + sep + lib_item
                     existing_tags.append(lib_item.lower())
-                    
-        elif action_mode == "Remove":
+
+        elif action_mode == LIB_MODE_REMOVE:
             for lib_item in selected_items:
                 cap = re.sub(r'(?i)\b' + re.escape(lib_item) + r'\b,?', '', cap)
             if target:
                 cap = re.sub(r'(?i)\b' + re.escape(target) + r'\b,?', '', cap)
             cap = re.sub(r',\s*,', ',', cap).strip(', ')
-            
-        elif action_mode == "Replace":
+
+        elif action_mode == LIB_MODE_REPLACE:
             if target and re.search(r'(?i)\b' + re.escape(target) + r'\b', cap):
                 replacement = ", ".join(selected_items)
                 pattern = re.compile(r'(?i)\b' + re.escape(target) + r'\b')
@@ -608,13 +618,16 @@ def simulate_and_export(dataset, export_dir, config_df, is_simulation, selected_
     to_export = []
     limit = int(max_images)
 
-    if strategy in ["Filtre Classique", "Classic Filter", "Filtre Classique (Contient au moins un tag)", "Classic Filter (Contains at least one tag)"]:
+    # `strategy` is the internal enum key (STRAT_*) from the radio's tuple
+    # choices. Renaming labels in en.json can no longer change which branch
+    # runs here.
+    if strategy == STRAT_CLASSIC:
         for item in base_pool:
             if not ordered_tags or any(re.search(r'\b' + re.escape(t) + r'\b', item['caption'].lower()) for t in ordered_tags):
                 to_export.append(item)
         if limit > 0: to_export = to_export[:limit]
 
-    elif strategy in ["Priorité", "Priority", "Priorité (Ordre du tableau)", "Priority (Table Order)"]:
+    elif strategy == STRAT_PRIORITY:
         seen = set()
         lim = limit if limit > 0 else len(base_pool)
         for tag in ordered_tags:
@@ -624,7 +637,7 @@ def simulate_and_export(dataset, export_dir, config_df, is_simulation, selected_
                     to_export.append(item); seen.add(item['id'])
             if len(to_export) >= lim: break
 
-    elif strategy in ["Équilibrage Auto (Pourcentages)", "Auto Balancing (Percentages)"]:
+    elif strategy == STRAT_BALANCING:
         relevant = [it for it in base_pool if not ordered_tags or any(re.search(r'\b'+re.escape(t)+r'\b', it['caption'].lower()) for t in ordered_tags)]
         lim = limit if limit > 0 else len(relevant)
         if lim > 0 and ordered_tags:
@@ -1223,168 +1236,6 @@ def analyze_bias(dataset, llm_model, api_backend, api_url, temp, ctx, sys_prompt
     return call_ai_api(f"Tu es un expert en entraînement IA. Échantillon de mon dataset : {all_caps}. Bref rapport des biais potentiels (poses, diversité) et conseils.", llm_model, None, api_backend, api_url, temp, ctx, sys_prompt)
 
 # ==========================================
-# GESTION DYNAMIQUE DU CHANGEMENT DE LANGUE
-# ==========================================
-def change_language(lang, stats_df, config_df, lib_state):
-    t = UI_T.get(lang, UI_T.get("FR", {})) 
-    m = MSG.get(lang, MSG.get("FR", {}))
-    new_stats = stats_df
-    new_config = config_df
-    kw = m.get("df_kw", "Mot-clé")
-    tgt = m.get("df_tgt", "Cible %")
-    prio = m.get("df_prio", "Priorité")
-    if isinstance(stats_df, pd.DataFrame) and not stats_df.empty:
-        new_stats = stats_df.rename(columns={
-            "Mot-clé": kw, "Keyword": kw,
-            "Compte": "Count" if lang=="EN" else "Compte", "Count": "Compte" if lang=="FR" else "Count",
-            "Actuel %": "Current %" if lang=="EN" else "Actuel %", "Current %": "Actuel %" if lang=="FR" else "Current %",
-            "Cible %": tgt, "Target %": tgt,
-            "Écart": "Diff" if lang=="EN" else "Écart", "Diff": "Écart" if lang=="FR" else "Diff"
-        })
-    if isinstance(config_df, pd.DataFrame) and not config_df.empty:
-        new_config = config_df.rename(columns={
-            "Priorité": prio, "Priority": prio, "Mot-clé": kw, "Keyword": kw, "Cible %": tgt, "Target %": tgt
-        })
-    lbl_pie = "Graphique (Répartition)" if lang == "FR" else "Chart (Distribution)"
-    lbl_bar = "Graphique (Occurrences)" if lang == "FR" else "Chart (Occurrences)"
-    
-    m_add = t.get("lib_mode_choices", ["Ajouter", "Retirer", "Remplacer"])[0]
-    m_rem = t.get("lib_mode_choices", ["Ajouter", "Retirer", "Remplacer"])[1]
-    m_rep = t.get("lib_mode_choices", ["Ajouter", "Retirer", "Remplacer"])[2]
-
-    return (
-        gr.update(value=t.get("title", "")),
-        gr.update(label=t.get("guide_title", "")),
-        gr.update(value=t.get("guide_text", "")),
-        gr.update(value=t.get("browse", "")),
-        gr.update(value=t.get("load", "")),
-        gr.update(value=t.get("status_wait", "")),
-        
-        gr.update(value=t.get("recipe_global", "")),
-        gr.update(label=t.get("recipes_dd", "")),
-        gr.update(label=t.get("recipe_name", "")),
-        gr.update(value=t.get("save_recipe", "")),
-        gr.update(placeholder=t.get("tracked_ph", "")),
-        
-        gr.update(value=t.get("gallery_title", "")),
-        gr.update(label=t.get("search", ""), placeholder=t.get("search_ph", "")),
-        gr.update(label=t.get("multi_cb", "")),
-        gr.update(value=t.get("clear_sel", "")),
-        gr.update(label=t.get("cols", "")),
-        
-        gr.update(value=t.get("hide_gal", "")),
-        gr.update(label=t.get("tab_view", "")),
-        gr.update(value=t.get("btn_prev", "")),
-        gr.update(value=t.get("btn_next", "")),
-        gr.update(value=t.get("shortcuts", "")),
-        gr.update(value=t.get("toggle_stat", "")),
-        
-        gr.update(label=t.get("live_trans_label", "")),
-        gr.update(value=t.get("save_cap", "")),
-        
-        gr.update(value=t.get("trans_module_title", "")),
-        gr.update(label=t.get("trans_engine", "")),
-        gr.update(label=t.get("trans_source", "")),
-        gr.update(label=t.get("trans_target", "")),
-        
-        gr.update(value=t.get("btn_translate_entire", "")),
-        gr.update(value=t.get("trans_insert_title", "")),
-        gr.update(placeholder=t.get("trans_input_ph", "")),
-        gr.update(value=t.get("btn_insert_trans", "")),
-        
-        gr.update(label=t.get("tab_batch", "")),
-        gr.update(value=t.get("btn_undo", "")),
-        gr.update(value=t.get("btn_clean_com", "")),
-        gr.update(value=t.get("btn_clean_dup", "")),
-        gr.update(label=t.get("df_preview", "")),
-        
-        gr.update(label=t.get("tab_prep", "")),
-        gr.update(value=t.get("dup_title", "")),
-        gr.update(label=t.get("hash_tol", "")),
-        gr.update(value=t.get("btn_scan_dups", "")),
-        gr.update(label=t.get("dup_dd", "")),
-        gr.update(value=t.get("btn_del_A", "")),
-        gr.update(value=t.get("btn_del_B", "")),
-        
-        gr.update(value=t.get("rename_title", "")),
-        gr.update(label=t.get("rename_prefix", "")),
-        gr.update(value=t.get("btn_rename", "")),
-        gr.update(value=t.get("resize_title", "")),
-        gr.update(label=t.get("prep_size", "")),
-        gr.update(label=t.get("prep_format", "")),
-        gr.update(label=t.get("prep_crop", "")),
-        gr.update(label=t.get("prep_alpha", "")),
-        gr.update(label=t.get("prep_dest", "")),
-        gr.update(value=t.get("btn_prep", "")),
-        
-        gr.update(label=t.get("tab_ai", "")),
-        gr.update(value=t.get("ai_conf_title", "")),
-        gr.update(label=t.get("api_backend", "")),
-        gr.update(label=t.get("vlm_model", "")),
-        gr.update(label=t.get("llm_model", "")),
-        gr.update(label=t.get("ai_adv_acc", "")),
-        gr.update(label=t.get("api_url_input", "")),
-        gr.update(label=t.get("ai_temp", "")),
-        gr.update(label=t.get("ai_ctx", "")),
-        gr.update(label=t.get("ai_sys", "")),
-        
-        gr.update(value=t.get("ai_act_title", "")),
-        gr.update(label=t.get("ai_action_dd", "")),
-        gr.update(label=t.get("ai_tpl_dd", "")),
-        gr.update(label=t.get("ai_tpl_name", "")),
-        gr.update(value=t.get("btn_save_tpl", "")),
-        gr.update(label=t.get("custom_prompt_input", "")),
-        gr.update(label=t.get("use_vision_custom", "")),
-        gr.update(label=t.get("injection_mode", "")),
-        gr.update(value=t.get("btn_run_ai", "")),
-        gr.update(value=t.get("btn_undo_ai", "")),
-        
-        gr.update(value=t.get("bias_title", "")),
-        gr.update(value=t.get("btn_bias", "")),
-        gr.update(label=t.get("txt_bias", "")),
-        
-        gr.update(label=t.get("tab_export", "")),
-        gr.update(value=t.get("exp_edit", "")),
-        gr.update(value=t.get("btn_up", "")),
-        gr.update(value=t.get("btn_down", "")),
-        gr.update(value=t.get("btn_del", "")),
-        gr.update(label=t.get("quick_prio", "")),
-        gr.update(label=t.get("quick_tgt", "")),
-        gr.update(value=new_config, headers=t.get("exp_df_headers", [])),
-        gr.update(label=t.get("strat", ""), choices=t.get("strat_choices", [])),
-        gr.update(label=t.get("max_img", "")),
-        gr.update(label=t.get("dest_folder", ""), placeholder=t.get("dest_ph", "")),
-        gr.update(value=t.get("btn_simul", "")),
-        gr.update(value=t.get("btn_exp", "")),
-        gr.update(label=lbl_pie),
-        gr.update(value=t.get("exp_gal", "")),
-        
-        gr.update(label=t.get("tab_stats", "")),
-        gr.update(value=new_stats, headers=t.get("stat_df_headers", [])),
-        gr.update(value=t.get("btn_civitai", "")),
-        gr.update(value=t.get("btn_top20", "")),
-        gr.update(value=t.get("btn_orph", "")),
-        gr.update(label=t.get("txt_orph", "")),
-        gr.update(label=lbl_pie),
-        gr.update(label=lbl_bar),
-        gr.update(value=t.get("adv_stats_title", "")),
-        gr.update(value=t.get("btn_calc_adv", "")),
-        gr.update(label=t.get("anti_title", "")),
-        gr.update(label=t.get("contra_title", "")),
-        
-        gr.update(value=t.get("lib_title", "")),
-        gr.update(label=t.get("lib_mode", ""), choices=[m_add, m_rem, m_rep], value=m_add),
-        gr.update(label=t.get("lib_target_rem", "")),
-        gr.update(value=t.get("btn_apply_lib_add", "")),
-        gr.update(placeholder=t.get("lib_add_text_ph", "")),
-        gr.update(value=t.get("btn_add_to_lib", "")),
-        gr.update(value=t.get("btn_uncheck_all", "")),
-        gr.update(value=t.get("btn_clear_lib", "")),
-        gr.update(value=t.get("lib_list_title", "")),
-        gr.update(value=render_lib_html(lib_state, lang))
-    )
-
-# ==========================================
 # INTERFACE GRADIO
 # ==========================================
 
@@ -1420,9 +1271,9 @@ with gr.Blocks(title="IMG Dataset Refiner v4.0 Pro", css=css_code) as app:
     ui_hidden_lib_delete_input = gr.Textbox(elem_id="hidden_lib_delete_input")
     ui_hidden_lib_delete_btn = gr.Button(elem_id="hidden_lib_delete_btn")
     
-    # Fork: English-only at runtime. fr.json still loads so the existing
-    # change_language() wiring keeps working if EN is selected, but the radio
-    # is hidden — French support will be properly removed in the Phase 3 split.
+    # Fork: English-only at runtime. fr.json still loads (it's referenced
+    # by change_language-less default-lookups in handlers) but the lang_radio
+    # is hidden and the dynamic-translation callback was removed in Phase 3.
     t_init = UI_T.get("EN", UI_T.get("FR", {}))
 
     with gr.Row():
@@ -1603,7 +1454,12 @@ with gr.Blocks(title="IMG Dataset Refiner v4.0 Pro", css=css_code) as app:
                                 ui_quick_target = gr.Number(label=t_init.get("quick_tgt", ""), scale=1)
                                 
                             ui_export_config_df = gr.Dataframe(headers=t_init.get("exp_df_headers", []), interactive=True, type="pandas", row_count=(1, "dynamic"), col_count=(3, "fixed"), elem_id="export_config_df")
-                            ui_strategy_radio = gr.Radio(t_init.get("strat_choices", []), value=t_init.get("strat_choices", [""])[0] if t_init.get("strat_choices") else "", label=t_init.get("strat", ""))
+                            _sc = t_init.get("strat_choices", ["Classic Filter", "Auto Balancing (Percentages)", "Priority"])
+                            ui_strategy_radio = gr.Radio(
+                                choices=[(_sc[0], STRAT_CLASSIC), (_sc[1], STRAT_BALANCING), (_sc[2], STRAT_PRIORITY)],
+                                value=STRAT_CLASSIC,
+                                label=t_init.get("strat", ""),
+                            )
                             ui_max_img_input = gr.Number(label=t_init.get("max_img", ""), value=0, precision=0)
                             ui_export_dir = gr.Textbox(label=t_init.get("dest_folder", ""), placeholder=t_init.get("dest_ph", ""))
                             with gr.Row():
@@ -1645,7 +1501,12 @@ with gr.Blocks(title="IMG Dataset Refiner v4.0 Pro", css=css_code) as app:
         with gr.Column(scale=0, elem_id="right_panel"):
             ui_lib_title = gr.HTML(t_init.get("lib_title", ""))
             
-            ui_lib_mode = gr.Radio(t_init.get("lib_mode_choices", []), label=t_init.get("lib_mode", ""), value=t_init.get("lib_mode_choices", [""])[0] if t_init.get("lib_mode_choices") else "")
+            _lmc = t_init.get("lib_mode_choices", ["Add", "Remove", "Replace"])
+            ui_lib_mode = gr.Radio(
+                choices=[(_lmc[0], LIB_MODE_ADD), (_lmc[1], LIB_MODE_REMOVE), (_lmc[2], LIB_MODE_REPLACE)],
+                label=t_init.get("lib_mode", ""),
+                value=LIB_MODE_ADD,
+            )
             ui_lib_target = gr.Textbox(label=t_init.get("lib_target_rem", ""), placeholder="Ex: 1girl", visible=False)
             
             ui_btn_apply_lib = gr.Button(t_init.get("btn_apply_lib_add", ""), variant="primary")
@@ -1667,38 +1528,11 @@ with gr.Blocks(title="IMG Dataset Refiner v4.0 Pro", css=css_code) as app:
 # CÂBLAGE DES ÉVÉNEMENTS
 # ==========================================
 
-    lang_radio.change(
-        fn=change_language, 
-        inputs=[lang_radio, ui_stats_table, ui_export_config_df, lib_state],
-        outputs=[
-            ui_title, ui_guide_acc, ui_guide_text, ui_browse_btn, ui_load_btn, ui_status_text,
-            ui_recipe_global, ui_recipes_dropdown, ui_recipe_name, ui_save_recipe_btn, ui_tracked_words,
-            ui_gallery_title, ui_search_box, ui_multi_select_cb, ui_clear_sel_btn, ui_gallery_cols,
-            ui_toggle_panel_btn, ui_tab_view, ui_btn_prev, ui_btn_next, ui_viewer_shortcuts, ui_toggle_tag_btn,
-            ui_live_translation_output, ui_save_single_btn,
-            ui_trans_module_title, ui_trans_engine, ui_trans_source, ui_trans_target,
-            ui_btn_translate_entire_caption, ui_trans_insert_title, ui_trans_input, ui_btn_insert_trans,
-            ui_tab_batch, ui_btn_undo, ui_btn_clean_com, ui_btn_clean_dup, ui_preview_table,
-            ui_tab_prep, ui_dup_title, ui_hash_tol, btn_scan_dups, dup_dropdown, btn_del_A, btn_del_B,
-            ui_rename_title, ui_rename_prefix, btn_rename, ui_resize_title, prep_size, prep_format, prep_crop, prep_alpha, prep_dest, btn_prep,
-            ui_tab_ai, ui_ai_conf_title, api_backend, vlm_model, llm_model, ui_ai_adv_acc, api_url_input, ai_temp, ai_ctx, ai_sys,
-            ui_ai_act_title, ai_action_dropdown, ai_template_dd, ai_template_name, btn_save_template, custom_prompt_input, use_vision_for_custom, injection_mode, btn_run_ai, btn_undo_ai,
-            ui_bias_title, btn_bias, txt_bias,
-            ui_tab_export, ui_exp_edit, ui_btn_up, ui_btn_down, ui_btn_del, ui_quick_prio, ui_quick_target, ui_export_config_df, ui_strategy_radio, ui_max_img_input, ui_export_dir, ui_btn_simul, ui_btn_exp, export_pie, ui_exp_gal,
-            ui_tab_stats, ui_stats_table, ui_btn_civitai, ui_btn_top20, ui_btn_orph, ui_txt_orph, pie_chart, bar_chart, ui_adv_stats_title, btn_calc_adv, txt_anti, txt_contra,
-            ui_lib_title, ui_lib_mode, ui_lib_target, ui_btn_apply_lib, ui_lib_add_text, ui_btn_add_to_lib, ui_btn_uncheck_all, ui_btn_clear_lib, ui_lib_list_title, ui_lib_html
-        ]
-    )
-
     def update_lib_ui(mode, lang):
         t = UI_T.get(lang, UI_T.get("FR", {}))
-        m_add = t.get("lib_mode_choices", ["Ajouter", "Retirer", "Remplacer"])[0]
-        m_rem = t.get("lib_mode_choices", ["Ajouter", "Retirer", "Remplacer"])[1]
-        m_rep = t.get("lib_mode_choices", ["Ajouter", "Retirer", "Remplacer"])[2]
-
-        if mode == m_add:
+        if mode == LIB_MODE_ADD:
             return gr.update(visible=False), gr.update(value=t.get("btn_apply_lib_add", ""))
-        elif mode == m_rem:
+        elif mode == LIB_MODE_REMOVE:
             return gr.update(visible=True, label=t.get("lib_target_rem", "")), gr.update(value=t.get("btn_apply_lib_rem", ""))
         else:
             return gr.update(visible=True, label=t.get("lib_target_rep", "")), gr.update(value=t.get("btn_apply_lib_rep", ""))
