@@ -1,4 +1,9 @@
-# **📊 IMG Dataset Refiner (v4.0 Pro)**
+# **📊 IMG Dataset Refiner (v4.0 Pro) — scottaaron117 fork**
+
+> **Fork notice.** This is a maintenance fork of [NyxAwroo/IMG-Dataset-Refiner](https://github.com/NyxAwroo/IMG-Dataset-Refiner).
+> Original concept, features, and UI by **NyxAwroo** — all credit for the design goes upstream.
+> This fork focuses on making it installable on current Python + Gradio 5.x and on cleaning up architectural fragility. See **What's changed in the fork** below.
+
 ![English](https://img.shields.io/badge/Language-English-blue?style=flat-square) ![Français](https://img.shields.io/badge/Langue-Fran%C3%A7ais-blue?style=flat-square)
 
 <div align="center">
@@ -67,12 +72,30 @@ This version brings unprecedented fluidity to the manual editing of your dataset
 
 ## **⚙️ Installation**
 
-1. Clone this repository or download the files.  
-2. Install the required dependencies via your terminal:  
-   pip install gradio pandas plotly imagehash opencv-python deep-translator
+Requires **Python 3.10, 3.11, or 3.12**. Gradio 5.x dropped support for Python 3.9.
 
-3. Run the script:  
-   python lora\_manager.py
+```
+git clone https://github.com/scottaaron117/IMG-Dataset-Refiner.git
+cd IMG-Dataset-Refiner
+pip install -e .          # preferred; uses pyproject.toml
+# or:
+pip install -r requirements.txt
+python lora_manager.py
+```
+
+> **Why pinned?** The original `requirements.txt` only floor-pinned Gradio, which caused two startup crashes on current pip installs: `huggingface_hub` 1.x removed `HfFolder`, and Gradio 6 renamed `col_count` → `column_count`. The fork pins `gradio>=5.15,<6` and `huggingface_hub<1.0` to avoid both.
+
+> **Folder picker.** The upstream "Browse" button opened a tkinter dialog on the *server* — wrong for a web app, broken on remote/headless installs, and an `ImportError` on bare Linux. The fork replaces it with a notice prompting you to paste the path. The textbox accepts Windows paths (`D:\my-dataset`) directly.
+
+## **🔧 What's changed in the fork**
+
+- **Installable.** Real `pyproject.toml` with pinned deps; `pip install -e .` works end-to-end on Python 3.10–3.12.
+- **Gradio 5.x compatible.** Fixed `Dataframe(column_count=...)` → `col_count`, fixed malformed `row_count=("dynamic")` tuple, removed the redundant `app.launch(css=...)` that always crashed on Gradio 5.
+- **No more tkinter.** Web-first folder input.
+- **English-only at runtime** (French dictionary still loads but the language radio is hidden). Full French removal + internal-enum-key refactor coming in a follow-up.
+- **Planned (in progress):** Replace the hidden-input JS bridge with `gr.JSON` state + native `js=` event hooks. Split the 2,082-line monolith into modules.
+
+See `Changelog.md` for the upstream version history.
 
 ## **📦 Project Structure**
 

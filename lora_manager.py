@@ -378,16 +378,12 @@ def extract_all_tags(dataset):
     return "|".join(sorted(list(all_tags)))
 
 def browse_folder():
-    try:
-        import tkinter as tk
-        from tkinter import filedialog
-        root = tk.Tk()
-        root.attributes('-topmost', True)
-        root.withdraw()
-        folder_path = filedialog.askdirectory(title="Folder")
-        root.destroy()
-        return folder_path if folder_path else ""
-    except Exception as e: return ""
+    # Gradio is a web app — a server-side tkinter dialog is the wrong UX:
+    # it pops on the host, not the user's browser, and breaks remote use.
+    # Paste the path into the textbox instead. Returning gr.update() preserves
+    # whatever the user has already typed.
+    gr.Info("Paste the dataset folder path into the textbox (e.g. D:\\my-dataset).")
+    return gr.update()
 
 def sort_dataset(dataset, order, lang, msg_no_sel, all_tags_str=""):
     if not dataset: return [], [], [], "", "{}", -1
@@ -1712,11 +1708,14 @@ with gr.Blocks(title="IMG Dataset Refiner v4.0 Pro", css=css_code) as app:
     ui_hidden_lib_delete_input = gr.Textbox(elem_id="hidden_lib_delete_input")
     ui_hidden_lib_delete_btn = gr.Button(elem_id="hidden_lib_delete_btn")
     
-    t_init = UI_T.get("FR", {})
+    # Fork: English-only at runtime. fr.json still loads so the existing
+    # change_language() wiring keeps working if EN is selected, but the radio
+    # is hidden — French support will be properly removed in the Phase 3 split.
+    t_init = UI_T.get("EN", UI_T.get("FR", {}))
 
     with gr.Row():
         with gr.Column(scale=2):
-            lang_radio = gr.Radio(["FR", "EN"], value="FR", label="Language / Langue")
+            lang_radio = gr.Radio(["FR", "EN"], value="EN", label="Language / Langue", visible=False)
             ui_title = gr.Markdown(t_init.get("title", ""))
             
             ui_guide_acc = gr.Accordion(t_init.get("guide_title", ""), open=False)
@@ -1891,7 +1890,7 @@ with gr.Blocks(title="IMG Dataset Refiner v4.0 Pro", css=css_code) as app:
                                 ui_quick_prio = gr.Dropdown(label=t_init.get("quick_prio", ""), choices=[str(i) for i in range(1, 101)], allow_custom_value=True, scale=1)
                                 ui_quick_target = gr.Number(label=t_init.get("quick_tgt", ""), scale=1)
                                 
-                            ui_export_config_df = gr.Dataframe(headers=t_init.get("exp_df_headers", []), interactive=True, type="pandas", row_count=("dynamic"), column_count=(3, "fixed"))
+                            ui_export_config_df = gr.Dataframe(headers=t_init.get("exp_df_headers", []), interactive=True, type="pandas", row_count=(1, "dynamic"), col_count=(3, "fixed"))
                             ui_strategy_radio = gr.Radio(t_init.get("strat_choices", []), value=t_init.get("strat_choices", [""])[0] if t_init.get("strat_choices") else "", label=t_init.get("strat", ""))
                             ui_max_img_input = gr.Number(label=t_init.get("max_img", ""), value=0, precision=0)
                             ui_export_dir = gr.Textbox(label=t_init.get("dest_folder", ""), placeholder=t_init.get("dest_ph", ""))
@@ -1909,7 +1908,7 @@ with gr.Blocks(title="IMG Dataset Refiner v4.0 Pro", css=css_code) as app:
                     ui_stats_status = gr.Markdown()
                     with gr.Row():
                         with gr.Column(scale=1):
-                            ui_stats_table = gr.Dataframe(headers=t_init.get("stat_df_headers", []), interactive=True, type="pandas", row_count=("dynamic"))
+                            ui_stats_table = gr.Dataframe(headers=t_init.get("stat_df_headers", []), interactive=True, type="pandas", row_count=(1, "dynamic"))
                             ui_btn_civitai = gr.Button(t_init.get("btn_civitai", ""), variant="secondary")
                             ui_civitai_output = gr.Textbox(label="Format", interactive=False, lines=5)
                             with gr.Row():
@@ -2075,8 +2074,10 @@ with gr.Blocks(title="IMG Dataset Refiner v4.0 Pro", css=css_code) as app:
 
     app.load(fn=lambda: None, inputs=None, outputs=None, js=custom_js)
 
+def _cli_entry():
+    # CSS is already attached at gr.Blocks(css=...). Launch should not re-pass it.
+    app.launch(inbrowser=True, server_name="127.0.0.1")
+
+
 if __name__ == "__main__":
-    try:
-        app.launch(inbrowser=True, server_name="127.0.0.1", css=css_code)
-    except TypeError:
-        app.launch(inbrowser=True, server_name="127.0.0.1")
+    _cli_entry()
